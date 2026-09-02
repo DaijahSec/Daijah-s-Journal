@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ledger — a private journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Caveat:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --paper: #fbf3e7;
+    --paper-card: #fffcf6;
+    --ink: #4a3b32;
+    --ink-soft: #8a7a6d;
+    --line: #e6d9c4;
+    --error: #a13d3d;
+    --ok: #4b6b45;
+
+    /* accent theme — swapped by data-theme on <body> */
+    --accent: #c98a4b;
+    --accent-soft: #e9cfa8;
+  }
+
+  body[data-theme="blush"]  { --accent: #c97b84; --accent-soft: #eecfd2; }
+  body[data-theme="sage"]   { --accent: #7c8b6f; --accent-soft: #d6ddc9; }
+  body[data-theme="dusk"]   { --accent: #6c7a9c; --accent-soft: #d3d9e8; }
+  body[data-theme="honey"]  { --accent: #c98a4b; --accent-soft: #e9cfa8; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    color: var(--ink);
+    font-family: 'Source Serif 4', serif;
+    min-height: 100vh;
+  }
+
+  body.has-bg-image::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: var(--paper);
+    opacity: 0.72;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 48px 20px 120px;
+  }
+
+  a { color: var(--accent); }
+
+  /* ---------- header ---------- */
+  header.site {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 28px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--line);
+  }
+
+  header.site h1 {
+    font-family: 'Caveat', cursive;
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  header.site .who {
+    font-size: 13px;
+    color: var(--ink-soft);
+    text-align: right;
+  }
+
+  header.site .who .actions { margin-top: 4px; }
+
+  header.site .who button {
+    background: none;
+    border: none;
+    color: var(--ink-soft);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+    margin-left: 10px;
+  }
+  header.site .who button:hover { color: var(--accent); }
+
+  /* ---------- auth screen ---------- */
+  .auth-card {
+    max-width: 380px;
+    margin: 80px auto;
+    padding: 36px 32px;
+    background: var(--paper-card);
+    border-radius: 18px;
+    box-shadow: 0 8px 30px rgba(74, 59, 50, 0.12);
+  }
+
+  .auth-card h2 {
+    font-family: 'Caveat', cursive;
+    font-size: 38px;
+    color: var(--accent);
+    margin: 0 0 2px;
+  }
+
+  .auth-card p.sub {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 0 0 24px;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+  }
+
+  input[type="email"], input[type="password"], input[type="url"], input[type="text"], textarea {
+    width: 100%;
+    font-family: 'Source Serif 4', serif;
+    font-size: 15px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin-bottom: 18px;
+    color: var(--ink);
+  }
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  button.primary {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 11px;
+    font-family: 'Source Serif 4', serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(0.92); }
+  button.primary:disabled { opacity: 0.5; cursor: default; }
+
+  .toggle-mode {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 13px;
+  }
+  .toggle-mode button {
+    background: none; border: none; color: var(--accent);
+    text-decoration: underline; cursor: pointer; font: inherit;
+  }
+
+  .msg { font-size: 13px; margin-bottom: 14px; }
+  .msg.error { color: var(--error); }
+  .msg.ok { color: var(--ok); }
+
+  /* ---------- customize panel ---------- */
+  .customize-toggle {
+    display: block;
+    margin: 0 0 20px auto;
+    background: none;
+    border: 1px dashed var(--line);
+    color: var(--ink-soft);
+    font-family: 'Source Serif 4', serif;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+  }
+  .customize-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+  .customize-panel {
+    background: var(--paper-card);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 28px;
+    box-shadow: 0 4px 16px rgba(74,59,50,0.08);
+  }
+
+  .customize-panel h4 {
+    font-family: 'Caveat', cursive;
+    font-size: 20px;
+    margin: 0 0 10px;
+    color: var(--accent);
+  }
+
+  .swatches { display: flex; gap: 10px; margin-bottom: 18px; }
+  .swatch {
+    width: 30px; height: 30px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent;
+  }
+  .swatch.active { border-color: var(--ink); }
+  .swatch[data-theme="honey"] { background: #c98a4b; }
+  .swatch[data-theme="blush"] { background: #c97b84; }
+  .swatch[data-theme="sage"]  { background: #7c8b6f; }
+  .swatch[data-theme="dusk"]  { background: #6c7a9c; }
+
+  .customize-panel .bg-row { display: flex; gap: 8px; align-items: center; }
+  .customize-panel .bg-row input { margin-bottom: 0; flex: 1; }
+  .customize-panel button.small {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+    font-family: 'Source Serif 4', serif;
+  }
+  .customize-panel button.ghost {
+    background: none; border: 1px solid var(--line); color: var(--ink-soft);
+    border-radius: 8px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+    font-family: 'Source Serif 4', serif; margin-top: 8px;
+  }
+
+  /* ---------- composer ---------- */
+  .composer {
+    background: var(--paper-card);
+    border-radius: 18px;
+    padding: 22px;
+    margin-bottom: 40px;
+    box-shadow: 0 6px 22px rgba(74, 59, 50, 0.1);
+  }
+
+  .composer .date-label {
+    font-family: 'Caveat', cursive;
+    font-size: 20px;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+
+  .composer input.entry-title {
+    font-size: 19px;
+    font-weight: 600;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: transparent;
+    padding: 0 0 10px;
+    margin-bottom: 12px;
+  }
+  .composer input.entry-title:focus { border-bottom-color: var(--accent); }
+
+  .composer textarea.entry-body {
+    border: none;
+    background: transparent;
+    padding: 0;
+    min-height: 130px;
+    line-height: 1.65;
+    resize: vertical;
+    margin-bottom: 6px;
+  }
+  .composer textarea.entry-body:focus { border: none; }
+
+  .mood-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0 6px;
+    flex-wrap: wrap;
+  }
+  .mood-row .label { font-size: 12px; color: var(--ink-soft); margin-right: 4px; }
+  .mood-pick {
+    font-size: 18px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    width: 34px; height: 34px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mood-pick.active { border-color: var(--accent); background: var(--accent-soft); }
+
+  .photo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+  }
+  .photo-picker-btn {
+    background: var(--paper);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .photo-picker-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .photo-preview-thumb {
+    position: relative;
+    width: 54px; height: 54px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .photo-preview-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-preview-thumb .remove {
+    position: absolute; top: -2px; right: -2px;
+    background: var(--error); color: #fff;
+    border-radius: 50%; width: 16px; height: 16px;
+    font-size: 11px; line-height: 16px; text-align: center;
+    cursor: pointer; border: none;
+  }
+
+  .composer-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 14px;
+    margin-top: 14px;
+  }
+
+  .composer-footer .hint { font-size: 12px; color: var(--ink-soft); margin-right: auto; }
+
+  button.save {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 22px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.save:hover { filter: brightness(0.92); }
+  button.save:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---------- entries ---------- */
+  .entries { display: flex; flex-direction: column; gap: 20px; }
+
+  .entry {
+    position: relative;
+    background: var(--paper-card);
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 4px 16px rgba(74, 59, 50, 0.08);
+  }
+
+  .entry .tape {
+    position: absolute;
+    top: -10px; left: 28px;
+    width: 70px; height: 22px;
+    background: var(--accent-soft);
+    opacity: 0.85;
+    transform: rotate(-3deg);
+    border-radius: 2px;
+  }
+
+  .entry .mood-sticker {
+    position: absolute;
+    top: -12px; right: 18px;
+    font-size: 26px;
+    background: var(--paper-card);
+    border-radius: 50%;
+    width: 42px; height: 42px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transform: rotate(8deg);
+  }
+
+  .entry .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+
+  .entry .date {
+    font-family: 'Caveat', cursive;
+    font-size: 18px;
+    color: var(--ink-soft);
+  }
+
+  .entry .delete {
+    background: none; border: none;
+    color: var(--ink-soft);
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .entry:hover .delete { opacity: 1; }
+  .entry .delete:hover { color: var(--error); }
+
+  .entry h3 { font-size: 19px; font-weight: 700; margin: 0 0 8px; }
+
+  .entry .body {
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .entry .body a { text-decoration: underline; }
+
+  .entry .gallery {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .entry .gallery .photo {
+    width: 120px; height: 120px;
+    border-radius: 6px;
+    border: 5px solid #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+    object-fit: cover;
+    cursor: pointer;
+  }
+  .entry .gallery .photo:nth-child(2n) { transform: rotate(-3deg); }
+  .entry .gallery .photo:nth-child(3n) { transform: rotate(2deg); }
+  .entry .gallery .photo:nth-child(5n) { transform: rotate(-1.5deg); }
+
+  .empty-state {
+    text-align: center;
+    padding: 50px 20px;
+    color: var(--ink-soft);
+    font-family: 'Caveat', cursive;
+    font-size: 20px;
+  }
+
+  .lightbox {
+    position: fixed; inset: 0;
+    background: rgba(30, 22, 15, 0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10; padding: 20px;
+    cursor: zoom-out;
+  }
+  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 8px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div id="app" class="shell"></div>
+
+<script>
+  // ── CONFIGURE ME ────────────────────────────────────────────────
+  const SUPABASE_URL = "https://flamsuqaathrexygfdom.supabase.co";
+  // Paste your "publishable key" here (starts with sb_publishable_...) —
+  // this is Supabase's current name for what used to be called the "anon key".
+  const SUPABASE_ANON_KEY = "sb_publishable_vEi3oPJ4_6d7y1XjrGq1ig_4pW5OE9K";
+  const PHOTO_BUCKET = "journal-photos";
+  // ────────────────────────────────────────────────────────────────
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const app = document.getElementById("app");
+  const MOODS = ["✨", "😊", "😌", "😢", "😤", "🥱", "🥰", "😬"];
+
+  let session = null;
+  let authMode = "sign_in";
+  let authMsg = null;
+  let entries = [];
+  let loadingEntries = false;
+  let settings = { accent_theme: "honey", background_url: null };
+  let customizeOpen = false;
+
+  // composer state
+  let composerMood = null;
+  let composerFiles = []; // {file, previewUrl}
+
+  sb.auth.onAuthStateChange((_event, s) => {
+    const wasSignedOut = !session;
+    session = s;
+    if (session && wasSignedOut) {
+      loadSettings();
+      loadEntries();
+    }
+    render();
+  });
+
+  async function init() {
+    const { data } = await sb.auth.getSession();
+    session = data.session;
+    if (session) {
+      await loadSettings();
+      await loadEntries();
+    }
+    render();
+  }
+
+  function applyTheme() {
+    document.body.setAttribute("data-theme", settings.accent_theme || "honey");
+    if (settings.background_url) {
+      document.body.style.backgroundImage = `url("${settings.background_url}")`;
+      document.body.classList.add("has-bg-image");
+    } else {
+      document.body.style.backgroundImage = "";
+      document.body.classList.remove("has-bg-image");
+    }
+  }
+
+  async function loadSettings() {
+    const { data } = await sb.from("settings").select("*").eq("user_id", session.user.id).maybeSingle();
+    if (data) settings = { accent_theme: data.accent_theme || "honey", background_url: data.background_url || null };
+    applyTheme();
+  }
+
+  async function saveSettings() {
+    await sb.from("settings").upsert({
+      user_id: session.user.id,
+      accent_theme: settings.accent_theme,
+      background_url: settings.background_url
+    });
+    applyTheme();
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+      weekday: 'short', month: 'short', day: 'numeric',
+      year: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function linkify(escapedText) {
+    return escapedText.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+      const clean = url.replace(/[.,;:!?)]+$/, "");
+      const trailing = url.slice(clean.length);
+      return `<a href="${clean}" target="_blank" rel="noopener noreferrer">${clean}</a>${trailing}`;
+    });
+  }
+
+  async function handleAuthSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById("auth-email").value.trim();
+    const password = document.getElementById("auth-password").value;
+    authMsg = null;
+    const btn = document.getElementById("auth-submit");
+    btn.disabled = true;
+    btn.textContent = "working...";
+
+    let result;
+    if (authMode === "sign_in") {
+      result = await sb.auth.signInWithPassword({ email, password });
+    } else {
+      result = await sb.auth.signUp({ email, password });
+    }
+
+    if (result.error) {
+      authMsg = { type: "error", text: result.error.message };
+      render();
+      return;
+    }
+
+    if (authMode === "sign_up" && !result.data.session) {
+      authMsg = { type: "ok", text: "Check your email to confirm your account, then sign in." };
+      authMode = "sign_in";
+      render();
+      return;
+    }
+
+    session = result.data.session;
+    await loadSettings();
+    await loadEntries();
+    render();
+  }
+
+  async function handleSignOut() {
+    await sb.auth.signOut();
+    session = null;
+    entries = [];
+    render();
+  }
+
+  async function loadEntries() {
+    loadingEntries = true;
+    render();
+    const { data, error } = await sb.from("entries").select("*").order("created_at", { ascending: false });
+    if (error) { loadingEntries = false; render(); return; }
+
+    // resolve signed URLs for any photos
+    for (const entry of data) {
+      entry.photoUrls = [];
+      if (entry.image_paths && entry.image_paths.length) {
+        const { data: signed } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(entry.image_paths, 3600);
+        if (signed) entry.photoUrls = signed.map(s => s.signedUrl).filter(Boolean);
+      }
+    }
+    entries = data;
+    loadingEntries = false;
+    render();
+  }
+
+  function handleFilePick(e) {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      composerFiles.push({ file, previewUrl: URL.createObjectURL(file) });
+    });
+    e.target.value = "";
+    render();
+  }
+
+  function removeComposerFile(idx) {
+    composerFiles.splice(idx, 1);
+    render();
+  }
+
+  function pickMood(m) {
+    composerMood = composerMood === m ? null : m;
+    render();
+  }
+
+  async function handleSave() {
+    const titleEl = document.getElementById("entry-title");
+    const bodyEl = document.getElementById("entry-body");
+    const title = titleEl.value.trim();
+    const body = bodyEl.value.trim();
+    if (!body) return;
+
+    const btn = document.getElementById("save-btn");
+    btn.disabled = true;
+    btn.textContent = "saving...";
+
+    // upload photos first
+    const imagePaths = [];
+    for (const item of composerFiles) {
+      const ext = item.file.name.split(".").pop();
+      const path = `${session.user.id}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await sb.storage.from(PHOTO_BUCKET).upload(path, item.file);
+      if (!upErr) imagePaths.push(path);
+    }
+
+    const { error } = await sb.from("entries").insert({
+      user_id: session.user.id,
+      title: title || null,
+      body: body,
+      mood: composerMood,
+      image_paths: imagePaths.length ? imagePaths : null
+    });
+
+    if (!error) {
+      titleEl.value = "";
+      bodyEl.value = "";
+      composerMood = null;
+      composerFiles = [];
+      await loadEntries();
+    } else {
+      alert("Couldn't save: " + error.message);
+      btn.disabled = false;
+      btn.textContent = "Save entry";
+    }
+  }
+
+  async function handleDelete(id, imagePaths) {
+    if (!confirm("Delete this entry? This can't be undone.")) return;
+    if (imagePaths && imagePaths.length) {
+      await sb.storage.from(PHOTO_BUCKET).remove(imagePaths);
+    }
+    await sb.from("entries").delete().eq("id", id);
+    await loadEntries();
+  }
+
+  function openLightbox(url) {
+    const div = document.createElement("div");
+    div.className = "lightbox";
+    div.innerHTML = `<img src="${url}">`;
+    div.addEventListener("click", () => div.remove());
+    document.body.appendChild(div);
+  }
+
+  function toggleCustomize() {
+    customizeOpen = !customizeOpen;
+    render();
+  }
+
+  function setAccent(theme) {
+    settings.accent_theme = theme;
+    saveSettings();
+    render();
+  }
+
+  async function setBackgroundFromInput() {
+    const url = document.getElementById("bg-url-input").value.trim();
+    settings.background_url = url || null;
+    await saveSettings();
+    render();
+  }
+
+  async function clearBackground() {
+    settings.background_url = null;
+    await saveSettings();
+    render();
+  }
+
+  // ---------- render ----------
+  function renderAuth() {
+    app.innerHTML = `
+      <div class="auth-card">
+        <h2>Ledger</h2>
+        <p class="sub">a private, single-reader journal</p>
+        ${authMsg ? `<div class="msg ${authMsg.type}">${authMsg.text}</div>` : ""}
+        <form id="auth-form">
+          <label for="auth-email">Email</label>
+          <input type="email" id="auth-email" required autocomplete="email">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" required autocomplete="current-password" minlength="6">
+          <button type="submit" class="primary" id="auth-submit">
+            ${authMode === "sign_in" ? "Sign in" : "Create account"}
+          </button>
+        </form>
+        <div class="toggle-mode">
+          ${authMode === "sign_in"
+            ? `New here? <button id="toggle-auth">Create an account</button>`
+            : `Already have an account? <button id="toggle-auth">Sign in</button>`}
+        </div>
+      </div>
+    `;
+    document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
+    document.getElementById("toggle-auth").addEventListener("click", () => {
+      authMode = authMode === "sign_in" ? "sign_up" : "sign_in";
+      authMsg = null;
+      render();
+    });
+  }
+
+  function renderCustomizePanel() {
+    if (!customizeOpen) return "";
+    const themes = ["honey", "blush", "sage", "dusk"];
+    return `
+      <div class="customize-panel">
+        <h4>Accent color</h4>
+        <div class="swatches">
+          ${themes.map(t => `<div class="swatch ${settings.accent_theme === t ? 'active' : ''}" data-theme="${t}" data-pick-theme="${t}"></div>`).join("")}
+        </div>
+        <h4>Background image</h4>
+        <div class="bg-row">
+          <input type="url" id="bg-url-input" placeholder="Paste an image URL..." value="${settings.background_url ? escapeHtml(settings.background_url) : ''}">
+          <button class="small" id="set-bg-btn">Set</button>
+        </div>
+        ${settings.background_url ? `<button class="ghost" id="clear-bg-btn">Remove background</button>` : ""}
+      </div>
+    `;
+  }
+
+  function renderJournal() {
+    const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+    app.innerHTML = `
+      <header class="site">
+        <h1>Ledger</h1>
+        <div class="who">
+          ${session.user.email}
+          <div class="actions"><button id="signout">sign out</button></div>
+        </div>
+      </header>
+
+      <button class="customize-toggle" id="customize-toggle">${customizeOpen ? "close customize" : "✏️ customize"}</button>
+      ${renderCustomizePanel()}
+
+      <div class="composer">
+        <div class="date-label">${today}</div>
+        <input type="text" class="entry-title" id="entry-title" placeholder="Title (optional)">
+        <textarea class="entry-body" id="entry-body" placeholder="Write what's on your mind..."></textarea>
+
+        <div class="mood-row">
+          <span class="label">mood:</span>
+          ${MOODS.map(m => `<button type="button" class="mood-pick ${composerMood === m ? 'active' : ''}" data-mood="${m}">${m}</button>`).join("")}
+        </div>
+
+        <div class="photo-row">
+          <label class="photo-picker-btn">
+            + add photos
+            <input type="file" id="photo-input" accept="image/*" multiple style="display:none">
+          </label>
+          ${composerFiles.map((f, i) => `
+            <div class="photo-preview-thumb">
+              <img src="${f.previewUrl}">
+              <button class="remove" data-remove-idx="${i}">×</button>
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="composer-footer">
+          <span class="hint">Only you can read this.</span>
+          <button class="save" id="save-btn">Save entry</button>
+        </div>
+      </div>
+
+      <div class="entries" id="entries-list">
+        ${loadingEntries ? `<div class="empty-state">loading entries...</div>` : renderEntriesHtml()}
+      </div>
+    `;
+
+    document.getElementById("signout").addEventListener("click", handleSignOut);
+    document.getElementById("save-btn").addEventListener("click", handleSave);
+    document.getElementById("photo-input").addEventListener("change", handleFilePick);
+    document.getElementById("customize-toggle").addEventListener("click", toggleCustomize);
+
+    document.querySelectorAll("[data-mood]").forEach(btn => {
+      btn.addEventListener("click", () => pickMood(btn.getAttribute("data-mood")));
+    });
+    document.querySelectorAll("[data-remove-idx]").forEach(btn => {
+      btn.addEventListener("click", () => removeComposerFile(parseInt(btn.getAttribute("data-remove-idx"))));
+    });
+
+    if (customizeOpen) {
+      document.querySelectorAll("[data-pick-theme]").forEach(sw => {
+        sw.addEventListener("click", () => setAccent(sw.getAttribute("data-pick-theme")));
+      });
+      const setBg = document.getElementById("set-bg-btn");
+      if (setBg) setBg.addEventListener("click", setBackgroundFromInput);
+      const clearBg = document.getElementById("clear-bg-btn");
+      if (clearBg) clearBg.addEventListener("click", clearBackground);
+    }
+
+    entries.forEach(entry => {
+      const delBtn = document.getElementById("del-" + entry.id);
+      if (delBtn) delBtn.addEventListener("click", () => handleDelete(entry.id, entry.image_paths));
+      (entry.photoUrls || []).forEach((url, i) => {
+        const img = document.getElementById(`photo-${entry.id}-${i}`);
+        if (img) img.addEventListener("click", () => openLightbox(url));
+      });
+    });
+  }
+
+  function renderEntriesHtml() {
+    if (entries.length === 0) {
+      return `<div class="empty-state">No entries yet — write your first one above 🤍</div>`;
+    }
+    return entries.map(entry => `
+      <div class="entry">
+        <div class="tape"></div>
+        ${entry.mood ? `<div class="mood-sticker">${entry.mood}</div>` : ""}
+        <div class="meta">
+          <span class="date">${fmtDate(entry.created_at)}</span>
+          <button class="delete" id="del-${entry.id}">delete</button>
+        </div>
+        ${entry.title ? `<h3>${escapeHtml(entry.title)}</h3>` : ""}
+        <div class="body">${linkify(escapeHtml(entry.body))}</div>
+        ${(entry.photoUrls && entry.photoUrls.length) ? `
+          <div class="gallery">
+            ${entry.photoUrls.map((url, i) => `<img class="photo" id="photo-${entry.id}-${i}" src="${url}">`).join("")}
+          </div>
+        ` : ""}
+      </div>
+    `).join("");
+  }
+
+  function render() {
+    if (!session) {
+      renderAuth();
+    } else {
+      renderJournal();
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
